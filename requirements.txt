@@ -1,0 +1,8 @@
+numpy
+opencv-python
+together
+python-dotenv
+pillow
+fastapi 
+uvicorn
+websockets
