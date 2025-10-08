@@ -13,7 +13,7 @@ client = Together(api_key=os.getenv('TOGETHER_API_KEY'))
 
 def capture_frame_and_ask(frame, question):
     """Save a frame, encode it, and ask a question about it."""
-    # Save the captured frame as an image file
+    
     
     rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     pil_image = Image.fromarray(rgb_frame)
