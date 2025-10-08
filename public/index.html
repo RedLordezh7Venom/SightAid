@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simple Text Reader</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="app-container">
+        <div id="status-indicator" class="status-indicator">Ready</div>
+        
+        <div class="camera-container">
+            <video id="camera-feed" autoplay playsinline></video>
+            <canvas id="overlay-canvas"></canvas>
+        </div>
+        
+        <button id="capture-btn" class="capture-button">
+            <span class="btn-text">Capture</span>
+        </button>
+        
+        <div class="voice-commands">
+            <div class="command">Read</div>
+            <div class="command">Louder</div>
+            <div class="command">Slower</div>
+            <div class="command">Repeat</div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html> 
