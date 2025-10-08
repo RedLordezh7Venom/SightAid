@@ -4,7 +4,7 @@ import os
 import io
 import threading
 from PIL import Image
-from fastapi import FastAPI, Form
+from fastapi import FastAPI, Form, File, UploadFile
 from fastapi.responses import HTMLResponse
 from together import Together
 from dotenv import load_dotenv
@@ -24,32 +24,45 @@ def capture_frame():
         raise RuntimeError("Failed to capture image")
     return frame
 
-def process_image_and_ask_question(frame, question):
+def process_image_and_ask_question(image_data, question):
     """Process the image and ask a question."""
-    rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    pil_image = Image.fromarray(rgb_frame)
+    pil_image = Image.open(io.BytesIO(image_data))
     
     # Encode image to base64
     buffer = io.BytesIO()
     pil_image.save(buffer, format="JPEG")
     base64_image = base64.b64encode(buffer.getvalue()).decode('utf-8')
     
-    # Create message with image and question
-    message = [
-        {
-            "role": "user", 
-            "content": [
-                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}},
-                {"type": "text", "text": question}
-            ]
-        }
-    ]
+    # Create system message
+    system_message = {
+        "role": "system",
+        "content": (
+            "You are an assistant for the elderly who have irreversible eye damage. "
+            "You will work as their eyes. If you detect a medicine label being read, "
+            "detail all about the medicine along with dosage and text. "
+            "If it is about some bills, read and summarize text in short, answer any query "
+            "related to the bills or documents you are given. "
+            "If it is a nutrition label, give all necessary details after extracting all text."
+        )
+    }
+    
+    # Create user message with image and question
+    user_message = {
+        "role": "user", 
+        "content": [
+            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}},
+            {"type": "text", "text": question}
+        ]
+    }
+    
+    # Combine messages
+    messages = [system_message, user_message]
     
     # Call the API
     try:
         response = client.chat.completions.create(
             model="meta-llama/Llama-Vision-Free",
-            messages=message,
+            messages=messages,
             max_tokens=None,
             temperature=0.7,
             top_p=0.7,
@@ -97,7 +110,13 @@ async def ask_question(question: str = Form(...)):
     answer = process_image_and_ask_question(frame, question)
     return {"question": question, "answer": answer}
 
+@app.post("/process")
+async def process(file: UploadFile = File(...), query: str = Form(...)):
+    image_data = await file.read()
+    answer = process_image_and_ask_question(image_data, query)
+    return {"question": query, "answer": answer}
+
 @app.on_event("shutdown")
 def shutdown_event():
     cam.release()
-    cv2.destroyAllWindows() 
+    cv2.destroyAllWindows()
