@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Voice Assistant</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            text-align: center;
+        }
+        
+        #status-indicator {
+            width: 100px;
+            height: 100px;
+            border-radius: 50%;
+            background-color: #ccc;
+            margin: 20px auto;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            transition: background-color 0.3s;
+        }
+        
+        #status-indicator.listening {
+            background-color: #4CAF50;
+            animation: pulse 1.5s infinite;
+        }
+        
+        #status-indicator.processing {
+            background-color: #FFC107;
+        }
+        
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
+        }
+        
+        #transcript, #response {
+            margin: 20px auto;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            min-height: 50px;
+            text-align: left;
+        }
+        
+        #response {
+            background-color: #f0f8ff;
+        }
+        
+        .conversation {
+            max-height: 300px;
+            overflow-y: auto;
+            margin-top: 20px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            padding: 10px;
+        }
+        
+        .user-message {
+            background-color: #e6f7ff;
+            padding: 10px;
+            border-radius: 5px;
+            margin: 5px 0;
+            text-align: left;
+        }
+        
+        .assistant-message {
+            background-color: #f0f0f0;
+            padding: 10px;
+            border-radius: 5px;
+            margin: 5px 0;
+            text-align: left;
+        }
+    </style>
+</head>
+<body>
+    <h1>Voice Assistant</h1>
+    <p>Say "Assistant" followed by your message</p>
+    
+    <div id="status-indicator">Ready</div>
+    
+    <div id="transcript">Listening...</div>
+    
+    <div id="response">Response will appear here...</div>
+    
+    <div class="conversation" id="conversation-history">
+        <div class="assistant-message">Hello! I'm listening. Say "Assistant" followed by your question.</div>
+    </div>
+    
+    <script>
+        import fs from "fs";
+        import Groq from "groq-sdk";
+        // DOM elements
+        const statusIndicator = document.getElementById('status-indicator');
+        const transcript = document.getElementById('transcript');
+        const response = document.getElementById('response');
+        const conversationHistory = document.getElementById('conversation-history');
+        
+        // Speech recognition setup
+        let recognition;
+        let isListening = false;
+        let recognitionTimeout;
+        
+        // Initialize speech recognition
+        function setupSpeechRecognition() {
+            if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+                alert("Speech recognition is not supported in your browser. Try Chrome or Edge.");
+                return;
+            }
+            
+            recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+            recognition.continuous = true;
+            recognition.interimResults = true;
+            recognition.lang = 'en-US';
+            
+            recognition.onstart = function() {
+                console.log("Speech recognition started");
+                isListening = true;
+                statusIndicator.textContent = "Listening";
+                statusIndicator.classList.add('listening');
+                clearTimeout(recognitionTimeout);
+            };
+            
+            recognition.onend = function() {
+                console.log("Speech recognition ended");
+                isListening = false;
+                statusIndicator.classList.remove('listening');
+                
+                // Restart recognition after a short delay if it stops unexpectedly
+                clearTimeout(recognitionTimeout);
+                recognitionTimeout = setTimeout(() => {
+                    if (!isListening) {
+                        console.log("Restarting speech recognition...");
+                        startRecognition();
+                    }
+                }, 500);
+            };
+            
+            recognition.onresult = handleRecognitionResult;
+            
+            recognition.onerror = function(event) {
+                console.error("Recognition error", event.error);
+                
+                if (event.error === 'no-speech') {
+                    console.log("No speech detected, restarting...");
+                } else {
+                    console.error("Error details:", event);
+                }
+                
+                // Restart on most errors
+                if (event.error !== 'aborted' && event.error !== 'audio-capture') {
+                    clearTimeout(recognitionTimeout);
+                    recognitionTimeout = setTimeout(() => {
+                        if (!isListening) {
+                            startRecognition();
+                        }
+                    }, 1000);
+                }
+            };
+        }
+        
+        function handleRecognitionResult(event) {
+            let finalTranscript = '';
+            let interimTranscript = '';
+            
+            // Collect transcripts
+            for (let i = event.resultIndex; i < event.results.length; i++) {
+                const result = event.results[i];
+                if (result.isFinal) {
+                    finalTranscript += result[0].transcript;
+                } else {
+                    interimTranscript += result[0].transcript;
+                }
+            }
+            
+            // Update the transcript display with either final or interim content
+            transcript.textContent = finalTranscript || interimTranscript;
+            
+            // Process the final transcript if available
+            if (finalTranscript) {
+                processTranscript(finalTranscript.trim());
+            }
+        }
+        
+        function processTranscript(text) {
+            console.log("Processing:", text);
+            
+            // Check if the transcript starts with "assistant"
+            const lowercaseText = text.toLowerCase();
+            if (lowercaseText.startsWith("assistant")) {
+                // Extract the message part (everything after "assistant")
+                const message = text.substring(9).trim();
+                
+                if (message) {
+                    // Process the message
+                    handleAssistantCommand(message);
+                }
+            }
+        }
+        
+        function handleAssistantCommand(message) {
+            console.log("Assistant command:", message);
+            
+            // Add user message to conversation history
+            addConversationItem("user", "Assistant " + message);
+            
+            // Update UI to show processing state
+            statusIndicator.textContent = "Processing";
+            statusIndicator.classList.remove('listening');
+            statusIndicator.classList.add('processing');
+            
+            // Here you would typically send the message to a backend for processing
+            // For this example, we'll just create a simple response
+            setTimeout(() => {
+                // Generate a response (in a real app, this would come from your backend)
+                const assistantResponse = generateResponse(message);
+                
+                // Display the response
+                response.textContent = assistantResponse;
+                
+                // Add assistant response to conversation history
+                addConversationItem("assistant", assistantResponse);
+                
+                // Speak the response
+                speakText(assistantResponse);
+                
+                // Reset UI state
+                statusIndicator.textContent = "Listening";
+                statusIndicator.classList.remove('processing');
+                statusIndicator.classList.add('listening');
+            }, 1000);
+        }
+        
+        function generateResponse(message) {
+            
+
+            const groq = new Groq();
+            async function main() {
+            const transcription = await groq.audio.transcriptions.create({
+                file: fs.createReadStream("audio.m4a"),
+                model: "whisper-large-v3",
+                response_format: "verbose_json",
+            });
+            console.log(transcription.text);
+            }
+            main();    
+                
+            // This is a placeholder for your actual backend processing
+            // In a real application, you would send the message to your Groq API
+            // and return the actual response
+            
+            message = message.toLowerCase();
+            
+            if (message.includes("hello") || message.includes("hi")) {
+                return "Hello there! How can I help you today?";
+            } else if (message.includes("time")) {
+                return "The current time is " + new Date().toLocaleTimeString();
+            } else if (message.includes("date")) {
+                return "Today is " + new Date().toLocaleDateString();
+            } else if (message.includes("weather")) {
+                return "I'm sorry, I don't have access to weather data in this simple demo.";
+            } else if (message.includes("thank")) {
+                return "You're welcome! Is there anything else I can help with?";
+            } else {
+                return "I heard you say: " + message + ". How can I help with that?";
+            }
+        }
+        
+        function addConversationItem(type, text) {
+            const div = document.createElement('div');
+            div.className = type === "user" ? "user-message" : "assistant-message";
+            div.textContent = text;
+            conversationHistory.appendChild(div);
+            
+            // Scroll to the bottom
+            conversationHistory.scrollTop = conversationHistory.scrollHeight;
+        }
+        
+        function speakText(text) {
+            if ('speechSynthesis' in window) {
+                const utterance = new SpeechSynthesisUtterance(text);
+                utterance.rate = 1.0;
+                window.speechSynthesis.speak(utterance);
+            }
+        }
+        
+        function startRecognition() {
+            try {
+                recognition.start();
+            } catch (e) {
+                console.error("Error starting recognition:", e);
+                
+                // If there's an error, wait and try again
+                setTimeout(() => {
+                    if (!isListening) {
+                        startRecognition();
+                    }
+                }, 1000);
+            }
+        }
+        
+        // Initialize everything on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            setupSpeechRecognition();
+            startRecognition();
+            
+            // Visual feedback when clicking on the status indicator
+            statusIndicator.addEventListener('click', function() {
+                if (isListening) {
+                    recognition.stop();
+                } else {
+                    startRecognition();
+                }
+            });
+        });
+    </script>
+</body>
+</html>
